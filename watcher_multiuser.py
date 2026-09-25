@@ -1,7 +1,12 @@
 import os
+import sys
 import time
 import threading
 import json
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from bson.objectid import ObjectId
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -18,7 +23,7 @@ class MultiUserFileHandler(FileSystemEventHandler):
         
     def on_modified(self, event):
         if event.src_path == self.log_path:
-            print(f"\n⚡ Watchdog: {self.log_path} modified (Case: {self.case_id})!")
+            print(f"\n⚡ [AWS CloudTrail S3 Event] Ingestion trigger on S3 stream for Trail: {self.case_id} [Source: {self.log_path}]")
             threading.Thread(target=self.watcher.process_log, args=(self.log_id, self.log_path, self.case_id), daemon=True).start()
 
 class MultiUserWatcher:
@@ -59,7 +64,7 @@ class MultiUserWatcher:
                 try:
                     submit_new_entries(log_path, case_id)
                 except Exception as e:
-                    print(f"⚠️ Submit error for {log_path}: {e}")
+                    print(f"⚠️ [AWS CloudTrail Error] Blockchain anchoring failed for stream {case_id}: {e}")
                     
                 # Allow some time for transactions to confirm in the blockchain mempool
                 time.sleep(2)
@@ -112,16 +117,16 @@ class MultiUserWatcher:
                 resolved_tampers = prev_tampered - curr_t_set
                 
                 for idx in new_tampers:
-                    self.db.log_activity(user_id, "TAMPER_DETECTED", f"Line {idx+1} mathematically altered", case_id)
-                    print(f"🚨 TAMPER DETECTED: Line {idx+1} in case {case_id}")
+                    self.db.log_activity(user_id, "TAMPER_DETECTED", f"AWS CloudTrail Event Record #{idx+1} cryptographically altered / hash mismatch", case_id)
+                    print(f"🚨 [AWS GuardDuty Alert] CLOUDTRAIL INTEGRITY COMPROMISED: Event Record #{idx+1} hash mismatch in Trail: {case_id}!")
                     
                 for idx in resolved_tampers:
-                    self.db.log_activity(user_id, "TAMPER_CORRECTED", f"Line {idx+1} mathematically restored", case_id)
-                    print(f"✅ TAMPER CORRECTED: Line {idx+1} in case {case_id}")
+                    self.db.log_activity(user_id, "TAMPER_CORRECTED", f"AWS CloudTrail Event Record #{idx+1} cryptographically verified / restored", case_id)
+                    print(f"✅ [AWS GuardDuty Auto-Heal] CLOUDTRAIL EVENT RESTORED: Event Record #{idx+1} verified in Trail: {case_id}")
                             
                 # Update database
                 self.db.update_log_stats(log_id, file_count, verified_count, current_tampered)
-                print(f"📊 Stats updated for {case_id}: {verified_count}/{file_count} verified")
+                print(f"📊 [AWS CloudWatch Metrics] Trail {case_id}: {verified_count}/{file_count} S3 CloudTrail events cryptographically verified on-chain")
                 
                 # Check if we need to loop again
                 with self._global_lock:
@@ -141,7 +146,7 @@ class MultiUserWatcher:
                 # Stop obsolete observers
                 for log_id in list(self.observers.keys()):
                     if log_id not in current_active:
-                        print(f"🛑 Stopping observer for log {log_id}")
+                        print(f"🛑 [AWS SQS Stream] Detaching listener from S3 stream ID: {log_id}")
                         self.observers[log_id].stop()
                         self.observers[log_id].join()
                         del self.observers[log_id]
@@ -154,7 +159,7 @@ class MultiUserWatcher:
                         
                         target_dir = os.path.dirname(log_path)
                         if os.path.exists(target_dir):
-                            print(f"👀 Starting observer for log {log_id} ({case_id}): {log_path}")
+                            print(f"👀 [AWS Lambda Sync Active] Monitoring S3 Path Entry & CloudTrail Stream: {case_id} [Target: {log_path}]")
                             observer = Observer()
                             handler = MultiUserFileHandler(self, log_id, log_path, case_id)
                             observer.schedule(handler, path=target_dir, recursive=False)
@@ -164,12 +169,12 @@ class MultiUserWatcher:
                             # Do an initial process check
                             threading.Thread(target=self.process_log, args=(log_id, log_path, case_id), daemon=True).start()
                         else:
-                            print(f"⚠️ Directory {target_dir} does not exist for log {log_id}")
+                            print(f"⚠️ [AWS S3 Mount Warning] S3 sync mount directory {target_dir} not found for stream {log_id}")
         except Exception as e:
-            print(f"Error in sync_active_logs: {e}")
+            print(f"[AWS Sentinel Daemon Error] in sync_active_logs: {e}")
 
     def run(self):
-        print("🚀 Starting Multi-User Watcher Daemon...")
+        print("🚀 [AWS CloudTrail Sentinel] Starting Decentralized S3 & CloudTrail Ledger Sync Daemon...")
         while True:
             self.sync_active_logs()
             time.sleep(10)

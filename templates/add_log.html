@@ -1,29 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="row">
-    <div class="col-md-6 offset-md-3">
-        <div class="card mt-4 border-info">
-            <div class="card-header bg-info text-dark fw-bold">
-                <h5 class="mb-0">Add New Log Source</h5>
+    <div class="col-md-7 offset-md-3">
+        <div class="card mt-4 border-info shadow-lg" style="background: rgba(13, 19, 37, 0.95); border: 1px solid #00e5ff33;">
+            <div class="card-header bg-info text-dark fw-bold d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">☁️ AWS CloudTrail Stream / S3 Bucket Registration</h5>
+                <span class="badge bg-dark text-info border border-info">Cloud Audit Desk</span>
             </div>
             <div class="card-body p-4">
+                <p class="text-muted small mb-4">
+                    Register an AWS CloudTrail event stream or S3 audit bucket destination. All ingested events are continuously hashed using SHA-256 and anchored to the decentralized Ethereum ledger for tamper-proof compliance.
+                </p>
                 <form method="POST">
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Case ID</label>
-                        <input type="text" name="case_id" class="form-control bg-dark text-white border-secondary" placeholder="e.g. CASE-2024-001" required>
-                        <div class="form-text text-muted">A unique identifier used on the blockchain to store these logs.</div>
+                        <label class="form-label fw-bold text-light">AWS CloudTrail Trail / ARN Identifier (Case ID)</label>
+                        <input type="text" name="case_id" class="form-control bg-dark text-white border-secondary" placeholder="e.g. arn:aws:cloudtrail:us-east-1:123456789012:trail/prod-security-trail" required>
+                        <div class="form-text text-muted">A unique immutable identifier used on the blockchain to index and audit this CloudTrail log stream.</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Absolute Log File Path</label>
-                        <input type="text" name="log_path" class="form-control bg-dark text-white border-secondary" placeholder="/home/user/logs/app.log" required>
-                        <div class="form-text text-muted">The complete path to the log file to monitor.</div>
+                        <label class="form-label fw-bold text-light">AWS CloudTrail Stream / S3 Bucket Path (e.g., s3://company-cloudtrail-logs-prod/us-east-1/)</label>
+                        <input type="text" name="log_path" class="form-control bg-dark text-white border-secondary" placeholder="s3://company-cloudtrail-logs-prod/us-east-1/cloudtrail_prod.log" required>
+                        <div class="form-text text-muted">Specify the target S3 Bucket URI or local AWS sync daemon stream target (e.g., <code>s3://company-cloudtrail-logs-prod/us-east-1/</code> or local mirror mount).</div>
                     </div>
                     <div class="mb-4">
-                        <label class="form-label fw-bold">Description (Optional)</label>
-                        <textarea name="description" class="form-control bg-dark text-white border-secondary" rows="2"></textarea>
+                        <label class="form-label fw-bold text-light">AWS Environment & Audit Scope Description (Optional)</label>
+                        <textarea name="description" class="form-control bg-dark text-white border-secondary" rows="2" placeholder="e.g., Production AWS VPC Flow logs, IAM policy modifications, and management events stream"></textarea>
                     </div>
-                    <button type="submit" class="btn btn-info fw-bold w-100">Start Monitoring</button>
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
+                    <button type="submit" class="btn btn-info fw-bold w-100 py-2">⚡ Connect & Provision CloudTrail Stream</button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary w-100 mt-2">Cancel & Return to Operations Dashboard</a>
                 </form>
             </div>
         </div>

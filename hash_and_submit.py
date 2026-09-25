@@ -5,32 +5,39 @@ All new lines submitted in ONE transaction instead of one per line.
 import hashlib
 import json
 import os
+import sys
 import time
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from web3 import Web3
 from merkle import build_merkle_tree
 
 # ── Config ────────────────────────────────────────────────────────
-RPC_URL              = "http://10.117.95.210:8545"
-CONTRACT_ADDRESS_V1  = "0xE89d89d78b1a2BBA11Cb36C0750c28cBbd118862"
-CONTRACT_ADDRESS_V2  = "0x898ed5b8d8703459c5DcD4BF0fA5D01c934D0762"
-PRIVATE_KEY          = "0x9c7bf0754e9b13d38d2b71a69da799f76545991b97918ae1e000f400437d51b2"
-ACCOUNT              = "0x8b629ce3BB085B061D95C7f0d14d2BF63ECbA758"
+BASE_DIR             = os.path.dirname(os.path.abspath(__file__))
+RPC_URL              = os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+CONTRACT_ADDRESS_V1  = os.environ.get("CONTRACT_ADDRESS_V1", "0xE89d89d78b1a2BBA11Cb36C0750c28cBbd118862")
+CONTRACT_ADDRESS_V2  = os.environ.get("CONTRACT_ADDRESS_V2", "0xC339e3B383333CAB68EbA145dEf8904864151c2E")
+PRIVATE_KEY          = os.environ.get("PRIVATE_KEY", "0x9c7bf0754e9b13d38d2b71a69da799f76545991b97918ae1e000f400437d51b2")
+ACCOUNT              = os.environ.get("ACCOUNT", "0x8b629ce3BB085B061D95C7f0d14d2BF63ECbA758")
 INVESTIGATOR_ID      = "INV-007"
-CHAIN_ID             = 12345
-ABI_V1_PATH          = "/home/sura/logchain/LogIntegrity_abi.json"
-ABI_V2_PATH          = "/home/sura/logchain/LogIntegrityV2_abi.json"
-LEAVES_FILE          = "/home/sura/logchain/original_leaves.json"
-OFFSET_FILE          = "/home/sura/logchain/offset_tracker.json"
+CHAIN_ID             = int(os.environ.get("CHAIN_ID", 12345))
+ABI_V1_PATH          = os.path.join(BASE_DIR, "LogIntegrity_abi.json")
+ABI_V2_PATH          = os.path.join(BASE_DIR, "LogIntegrityV2_abi.json")
+LEAVES_FILE          = os.path.join(BASE_DIR, "original_leaves.json")
+OFFSET_FILE          = os.path.join(BASE_DIR, "offset_tracker.json")
 
 # ── Connect ───────────────────────────────────────────────────────
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
+contract_v1, contract_v2 = None, None
 if w3.is_connected():
-    with open(ABI_V1_PATH) as f:
-        contract_v1 = w3.eth.contract(address=CONTRACT_ADDRESS_V1, abi=json.load(f))
-    with open(ABI_V2_PATH) as f:
-        contract_v2 = w3.eth.contract(address=CONTRACT_ADDRESS_V2, abi=json.load(f))
-else:
-    contract_v1, contract_v2 = None, None
+    if os.path.exists(ABI_V1_PATH):
+        with open(ABI_V1_PATH) as f:
+            contract_v1 = w3.eth.contract(address=CONTRACT_ADDRESS_V1, abi=json.load(f))
+    if os.path.exists(ABI_V2_PATH):
+        with open(ABI_V2_PATH) as f:
+            contract_v2 = w3.eth.contract(address=CONTRACT_ADDRESS_V2, abi=json.load(f))
 
 def sha256_line(line: str) -> str:
     return hashlib.sha256(line.strip().encode()).hexdigest()
@@ -168,7 +175,5 @@ def submit_new_entries(log_file: str, case_id: str):
     return True
 
 if __name__ == "__main__":
-    submit_new_entries(
-        "/home/sura/logchain/sample log/sam1.log",
-        "CASE-2024-0078"
-    )
+    sample_file = os.path.join(BASE_DIR, "sample log", "sam3.log")
+    submit_new_entries(sample_file, "CASE-2024-0078")

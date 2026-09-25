@@ -3,16 +3,22 @@ deploy_v2.py  —  Deploy LogIntegrityV2 using web3.py + compiled Hardhat artifa
 Run: python deploy_v2.py
 """
 import json
+import os
 import sys
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from web3 import Web3
 
-RPC_URL     = "http://10.117.95.210:8545"
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+RPC_URL     = "http://127.0.0.1:8545"
 PRIVATE_KEY = "0x9c7bf0754e9b13d38d2b71a69da799f76545991b97918ae1e000f400437d51b2"
 ACCOUNT     = "0x8b629ce3BB085B061D95C7f0d14d2BF63ECbA758"
 CHAIN_ID    = 12345
 
-ARTIFACT    = "/home/sura/logchain/artifacts/contracts/LogIntegrityV2.sol/LogIntegrityV2.json"
-ABI_OUT     = "/home/sura/logchain/LogIntegrityV2_abi.json"
+ARTIFACT    = os.path.join(BASE_DIR, "artifacts", "contracts", "LogIntegrityV2.sol", "LogIntegrityV2.json")
+ABI_OUT     = os.path.join(BASE_DIR, "LogIntegrityV2_abi.json")
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 if not w3.is_connected():

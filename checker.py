@@ -1,10 +1,16 @@
+import os
+import sys
 import json
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from web3 import Web3
 
-# Config
-RPC_URL = "http://localhost:8545"
-CONTRACT_ADDRESS = "0x898ed5b8d8703459c5DcD4BF0fA5D01c934D0762"
-ABI_PATH = "/home/sura/logchain/LogIntegrityV2_abi.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RPC_URL = os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+CONTRACT_ADDRESS = os.environ.get("CONTRACT_ADDRESS_V2", "0xC339e3B383333CAB68EbA145dEf8904864151c2E")
+ABI_PATH = os.path.join(BASE_DIR, "LogIntegrityV2_abi.json")
 CASE_ID  = "CASE-2024-0078"
 
 def check_node():

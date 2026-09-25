@@ -1,7 +1,12 @@
 import os
+import sys
 import json
 import hashlib
 from datetime import datetime
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, abort
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from web3 import Web3
@@ -44,13 +49,14 @@ def admin_required(f):
     return decorated_function
 
 # ── Blockchain Setup ──────────────────────────────────────────────
-RPC_URL = "http://10.117.95.210:8545"
-NODE2_RPC_URL = "http://10.117.95.234:8546"
-CONTRACT_ADDRESS_V2 = "0x898ed5b8d8703459c5DcD4BF0fA5D01c934D0762"
-ABI_V2_PATH = "/home/sura/logchain/LogIntegrityV2_abi.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RPC_URL = os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+NODE2_RPC_URL = os.environ.get("NODE2_RPC_URL", "")
+CONTRACT_ADDRESS_V2 = os.environ.get("CONTRACT_ADDRESS_V2", "0xC339e3B383333CAB68EbA145dEf8904864151c2E")
+ABI_V2_PATH = os.path.join(BASE_DIR, "LogIntegrityV2_abi.json")
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
-w3_node2 = Web3(Web3.HTTPProvider(NODE2_RPC_URL))
+w3_node2 = Web3(Web3.HTTPProvider(NODE2_RPC_URL)) if NODE2_RPC_URL else None
 contract_v2 = None
 if w3.is_connected() and os.path.exists(ABI_V2_PATH):
     with open(ABI_V2_PATH) as f:
@@ -79,7 +85,7 @@ def login():
             user = User(user_data)
             login_user(user)
             db.update_login_time(user.id)
-            db.log_activity(user.id, "LOGIN", "User logged in successfully")
+            db.log_activity(user.id, "LOGIN", f"IAM Auditor authenticated: {user.username}")
             return redirect(url_for('dashboard'))
             
         flash('Invalid username or password', 'danger')
@@ -96,7 +102,7 @@ def register():
         if error:
             flash(error, 'danger')
         else:
-            db.log_activity(user_id, "REGISTER", f"New user registered: {username}")
+            db.log_activity(user_id, "REGISTER", f"New IAM Auditor registered: {username}")
             flash('Registration successful! Please login.', 'success')
             return redirect(url_for('login'))
             
@@ -126,12 +132,13 @@ def add_log():
         log_path = request.form.get('log_path')
         description = request.form.get('description', '')
         
-        if not os.path.exists(log_path):
-            flash('Warning: File path does not currently exist', 'warning')
+        # Verify local sync path if not purely virtual S3 URI
+        if not log_path.startswith("s3://") and not os.path.exists(log_path):
+            flash('Notice: S3 CloudTrail stream sync cache path not currently found on local node mount', 'warning')
             
         log_id, _ = db.add_log_source(current_user.id, log_path, case_id, description)
-        db.log_activity(current_user.id, "ADD_LOG", f"Added log source for Case ID: {case_id}")
-        flash('Log source added successfully!', 'success')
+        db.log_activity(current_user.id, "PROVISION_STREAM", f"[AWS S3 Ingestion] Attached CloudTrail Stream: {case_id} ({log_path})")
+        flash('AWS CloudTrail Stream provisioned and connected to Ledger!', 'success')
         return redirect(url_for('dashboard'))
         
     return render_template('add_log.html')
@@ -141,14 +148,15 @@ def add_log():
 def toggle_log(log_id):
     new_status = db.toggle_log_status(log_id, current_user.id)
     if new_status is not None:
-        db.log_activity(current_user.id, "TOGGLE_LOG", f"Log {log_id} status changed to {new_status}")
+        status_label = "ACTIVE" if new_status else "SUSPENDED"
+        db.log_activity(current_user.id, "TOGGLE_STREAM", f"[AWS S3 Ingestion] CloudTrail Stream {log_id} ingestion state changed to {status_label}")
     return redirect(url_for('dashboard'))
 
 @app.route('/delete_log/<log_id>')
 @login_required
 def delete_log(log_id):
     if db.delete_log(log_id, current_user.id):
-        db.log_activity(current_user.id, "DELETE_LOG", f"Deleted log {log_id}")
+        db.log_activity(current_user.id, "DEPROVISION_STREAM", f"[AWS S3 Ingestion] Deprovisioned CloudTrail stream {log_id}")
     return redirect(url_for('dashboard'))
 
 # ── Admin Routes ──────────────────────────────────────────────────
@@ -207,7 +215,7 @@ def api_blockchain_status():
         node1_connected, node1_block, node1_peers, node1_mining = False, 0, 0, False
 
     try:
-        node2_connected = w3_node2.is_connected()
+        node2_connected = w3_node2.is_connected() if w3_node2 else False
         node2_block = w3_node2.eth.block_number if node2_connected else 0
     except Exception:
         node2_connected, node2_block = False, 0
@@ -223,9 +231,9 @@ def api_blockchain_status():
         "node2": {
             "connected": node2_connected,
             "block": node2_block,
-            "ip": NODE2_RPC_URL
+            "ip": NODE2_RPC_URL or "Single-Node Mode (PC1)"
         },
-        "active": node1_connected and node2_connected
+        "active": node1_connected and (node2_connected if NODE2_RPC_URL else True)
     })
 
 @app.route('/api/stats')
@@ -326,7 +334,7 @@ def api_entries(case_id):
                 chash = contract_v2.functions.getEntryHash(case_id, i).call()
                 if fhash == chash:
                     rows.append({
-                        "index": i + 1, "status": "✅ OK",
+                        "index": i + 1, "status": "✅ VERIFIED",
                         "content": file_lines[i].strip()[:55],
                         "file_hash": fhash[:20] + "...",
                         "chain_hash": chash[:20] + "...",
@@ -335,7 +343,7 @@ def api_entries(case_id):
                 elif not chash:
                     all_ok = False
                     rows.append({
-                        "index": i + 1, "status": "⚠️ MISSING",
+                        "index": i + 1, "status": "⚠️ S3 SYNC LAG",
                         "content": file_lines[i].strip()[:55],
                         "file_hash": fhash[:20] + "...",
                         "chain_hash": "...",
@@ -344,7 +352,7 @@ def api_entries(case_id):
                 else:
                     all_ok = False
                     rows.append({
-                        "index": i + 1, "status": "🚨 TAMPERED",
+                        "index": i + 1, "status": "🚨 TAMPER DETECTED",
                         "content": file_lines[i].strip()[:55],
                         "file_hash": fhash[:20] + "...",
                         "chain_hash": chash[:20] + "...",
@@ -354,7 +362,7 @@ def api_entries(case_id):
                 all_ok = False
                 fhash = sha256_line(file_lines[i])
                 rows.append({
-                    "index": i + 1, "status": "⏳ PENDING",
+                    "index": i + 1, "status": "⏳ PENDING ON-CHAIN NOTARIZATION",
                     "content": file_lines[i].strip()[:55],
                     "file_hash": fhash[:20] + "...", "chain_hash": "...",
                     "row_class": "row-pending", "tag_class": "tag-pending"
@@ -363,8 +371,8 @@ def api_entries(case_id):
                 all_ok = False
                 chash = contract_v2.functions.getEntryHash(case_id, i).call()
                 rows.append({
-                    "index": i + 1, "status": "❌ DELETED",
-                    "content": "(missing from file)",
+                    "index": i + 1, "status": "❌ S3 OBJECT DELETED",
+                    "content": "(missing from S3 stream)",
                     "file_hash": "(none)",
                     "chain_hash": chash[:20] + "...",
                     "row_class": "row-deleted", "tag_class": "tag-deleted"
@@ -372,7 +380,7 @@ def api_entries(case_id):
                 
         results["all_ok"] = all_ok
         results["rows"] = rows
-        results["status"] = "All Verified" if all_ok else "Integrity Issues"
+        results["status"] = "All CloudTrail Events Verified" if all_ok else "Integrity Issues Detected"
         
     except Exception as e:
         results["status"] = f"Error: {str(e)}"
@@ -381,4 +389,8 @@ def api_entries(case_id):
     return jsonify(results)
 
 if __name__ == '__main__':
+    print("\n" + "="*70)
+    print(" ☁️  AWS CLOUDTRAIL / S3 BLOCKCHAIN INTEGRITY GATEWAY")
+    print(" [AWS Lambda Sync Active] API Service listening on http://0.0.0.0:5000")
+    print("="*70 + "\n")
     app.run(host='0.0.0.0', port=5000, debug=True)

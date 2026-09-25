@@ -1,5 +1,8 @@
-node_modules
+node_modules/
 .env
+__pycache__/
+*.pyc
+*.log
 
 # Hardhat files
 /cache
@@ -13,3 +16,9 @@ node_modules
 /coverage
 /coverage.json
 *.deb
+
+# Geth chaindata, LevelDB, and runtime locks
+node1/geth/
+single_node/geth/
+*/geth/
+*.ipc

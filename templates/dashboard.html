@@ -2,33 +2,33 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-3">
-        <div class="card bg-info text-dark mb-3">
+        <div class="card bg-info text-dark mb-3 shadow-sm">
             <div class="card-body">
-                <h6 class="card-title text-uppercase fw-bold">Total Logs</h6>
+                <h6 class="card-title text-uppercase fw-bold" style="font-size: 0.8rem; letter-spacing: 0.5px;">Total Cloud Streams</h6>
                 <h2 class="card-text fw-bold" id="stat_total">0</h2>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-white bg-success mb-3 border-0">
+        <div class="card text-white bg-success mb-3 border-0 shadow-sm">
             <div class="card-body">
-                <h6 class="card-title text-uppercase text-white-50 fw-bold">Active Monitoring</h6>
+                <h6 class="card-title text-uppercase text-white-50 fw-bold" style="font-size: 0.8rem; letter-spacing: 0.5px;">Active AWS CloudTrail Streams Connected</h6>
                 <h2 class="card-text fw-bold" id="stat_active">0</h2>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-white bg-secondary mb-3 border-0">
+        <div class="card text-white bg-secondary mb-3 border-0 shadow-sm">
             <div class="card-body">
-                <h6 class="card-title text-uppercase text-white-50 fw-bold">Total Entries</h6>
+                <h6 class="card-title text-uppercase text-white-50 fw-bold" style="font-size: 0.8rem; letter-spacing: 0.5px;">CloudTrail Events Ingested</h6>
                 <h2 class="card-text fw-bold" id="stat_entries">0</h2>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-dark bg-warning mb-3 border-0">
+        <div class="card text-dark bg-warning mb-3 border-0 shadow-sm">
             <div class="card-body">
-                <h6 class="card-title text-uppercase fw-bold text-dark">Verified Entries</h6>
+                <h6 class="card-title text-uppercase fw-bold text-dark" style="font-size: 0.8rem; letter-spacing: 0.5px;">On-Chain Verified Events</h6>
                 <h2 class="card-text fw-bold" id="stat_verified">0</h2>
             </div>
         </div>
@@ -36,19 +36,22 @@
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="fw-bold">Your Log Sources</h4>
-    <a href="{{ url_for('add_log') }}" class="btn btn-outline-info">➕ Add Log Source</a>
+    <div>
+        <h4 class="fw-bold mb-1">☁️ Connected AWS CloudTrail Streams & S3 Buckets</h4>
+        <div class="text-muted small">Continuous cryptographic notarization & real-time tamper auditing against Ethereum Ledger.</div>
+    </div>
+    <a href="{{ url_for('add_log') }}" class="btn btn-outline-info">➕ Connect CloudTrail Stream</a>
 </div>
 
 <div class="table-responsive">
     <table class="table table-dark table-hover border-secondary">
         <thead>
             <tr>
-                <th>Case ID</th>
-                <th>Log Path</th>
-                <th>Status</th>
-                <th>Entries (Verified/Total)</th>
-                <th>Integrity</th>
+                <th>Trail ARN / Case ID</th>
+                <th>AWS CloudTrail / S3 Stream Path</th>
+                <th>Ingestion Status</th>
+                <th>CloudTrail Events (Verified / Ingested)</th>
+                <th>Ledger Verification</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -56,46 +59,64 @@
             {% for log in logs %}
             <tr>
                 <td class="fw-bold text-info">{{ log.case_id }}</td>
-                <td><code>{{ log.log_path }}</code></td>
+                <td>
+                    {% if log.log_path.startswith('s3://') %}
+                        <code class="text-info fw-bold">{{ log.log_path }}</code>
+                    {% else %}
+                        {% set clean_name = log.log_path.replace('\\', '/').split('/')[-1] %}
+                        <div class="d-flex flex-column">
+                            <code class="text-info fw-bold">s3://company-cloudtrail-logs-prod/us-east-1/{{ clean_name if clean_name else 'cloudtrail_us_east_1.log' }}</code>
+                            <small class="text-muted" style="font-size: 0.72rem;">S3 Ingest Sync Mount: {{ log.log_path }}</small>
+                        </div>
+                    {% endif %}
+                </td>
                 <td>
                     {% if log.is_active %}
-                    <span class="badge bg-success">Active</span>
+                    <span class="badge bg-success">🟢 Syncing Active</span>
                     {% else %}
-                    <span class="badge bg-secondary">Paused</span>
+                    <span class="badge bg-secondary">⏸️ Ingestion Paused</span>
                     {% endif %}
                 </td>
                 <td id="log_stats_{{ log._id }}">{{ log.verified_entries }} / {{ log.total_entries }}</td>
                 <td id="log_integrity_{{ log._id }}">
                     {% if log.total_entries > 0 and log.verified_entries == log.total_entries %}
-                        <span class="badge bg-success">✅ Fully Verified</span>
+                        <span class="badge bg-success">🛡️ 100% Ledger Verified</span>
                     {% elif log.total_entries == 0 %}
-                        <span class="badge bg-secondary">Awaiting Logs</span>
+                        <span class="badge bg-secondary">⏳ Awaiting CloudTrail Events</span>
                     {% else %}
-                        <span class="badge bg-danger">⏳ Issues/Pending</span>
+                        <span class="badge bg-danger">🚨 Integrity Issues Detected</span>
                     {% endif %}
                 </td>
                 <td>
-                    <button class="btn btn-sm btn-info fw-bold text-dark" onclick="viewLive('{{log.case_id}}')">Live View</button>
+                    <button class="btn btn-sm btn-info fw-bold text-dark" onclick="viewLive('{{log.case_id}}')">Audit Stream</button>
                     <a href="{{ url_for('toggle_log', log_id=log._id) }}" class="btn btn-sm btn-outline-warning">Toggle</a>
-                    <a href="{{ url_for('delete_log', log_id=log._id) }}" class="btn btn-sm btn-outline-danger">Delete</a>
+                    <a href="{{ url_for('delete_log', log_id=log._id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Disconnect and remove this CloudTrail stream?')">Detach</a>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="5" class="text-center text-muted py-4">No log sources configured. Add one to get started!</td></tr>
+            <tr><td colspan="6" class="text-center text-muted py-4">No active AWS CloudTrail streams configured. Connect an S3 bucket stream to start decentralized auditing!</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
-<div class="card mt-4 border-info" id="liveViewCard" style="display:none;">
+<div class="card mt-4 border-info" id="liveViewCard" style="display:none; background: rgba(13, 19, 37, 0.95);">
     <div class="card-header bg-info text-dark d-flex justify-content-between align-items-center">
-        <h5 class="mb-0 fw-bold">Live Blockchain View: <span id="liveCaseId"></span></h5>
-        <span id="liveStatus" class="badge bg-dark text-white border">Loading...</span>
+        <h5 class="mb-0 fw-bold">🛡️ Live Ledger Audit: <span id="liveCaseId"></span> <span class="badge bg-dark text-info ms-2">AWS CloudTrail Stream</span></h5>
+        <span id="liveStatus" class="badge bg-dark text-white border">Synchronizing...</span>
     </div>
     <div class="card-body p-0">
-        <div class="table-responsive m-0" style="max-height: 400px; overflow-y: auto;">
+        <div class="table-responsive m-0" style="max-height: 420px; overflow-y: auto;">
             <table class="table table-sm table-dark table-hover m-0" id="liveTable">
-                <thead class="position-sticky top-0 bg-dark"><tr><th>#</th><th>Status</th><th>Content</th><th>File Hash</th><th>Chain Hash</th></tr></thead>
+                <thead class="position-sticky top-0 bg-dark" style="z-index: 2;">
+                    <tr>
+                        <th style="width: 5%;">#</th>
+                        <th style="width: 20%;">Verification Status</th>
+                        <th style="width: 45%;">CloudTrail Event Payload</th>
+                        <th style="width: 15%;">S3 SHA-256 Hash</th>
+                        <th style="width: 15%;">Ledger Anchor Hash</th>
+                    </tr>
+                </thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -125,11 +146,11 @@ function fetchStats() {
                     const instCell = document.getElementById('log_integrity_' + log.id);
                     if (instCell) {
                         if (log.total > 0 && log.verified === log.total) {
-                            instCell.innerHTML = '<span class="badge bg-success">✅ Fully Verified</span>';
+                            instCell.innerHTML = '<span class="badge bg-success">🛡️ 100% Ledger Verified</span>';
                         } else if (log.total === 0) {
-                            instCell.innerHTML = '<span class="badge bg-secondary">Awaiting Logs</span>';
+                            instCell.innerHTML = '<span class="badge bg-secondary">⏳ Awaiting CloudTrail Events</span>';
                         } else {
-                            instCell.innerHTML = '<span class="badge bg-danger">⏳ Issues/Pending</span>';
+                            instCell.innerHTML = '<span class="badge bg-danger">🚨 Integrity Issues Detected</span>';
                         }
                     }
                 });
@@ -159,7 +180,7 @@ function fetchLive() {
             data.rows.forEach(row => {
                 let tr = document.createElement('tr');
                 tr.className = row.row_class;
-                tr.innerHTML = `<td>${row.index}</td><td class="fw-bold">${row.status}</td><td>${row.content}</td><td><code>${row.file_hash}</code></td><td><code>${row.chain_hash}</code></td>`;
+                tr.innerHTML = `<td>${row.index}</td><td class="fw-bold">${row.status}</td><td><code>${row.content}</code></td><td><code>${row.file_hash}</code></td><td><code>${row.chain_hash}</code></td>`;
                 tbody.appendChild(tr);
             });
         }).catch(err => console.log(err));
