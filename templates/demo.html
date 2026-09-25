@@ -107,6 +107,9 @@
                 <!-- Simulation Quick-Triggers -->
                 <h6 class="text-secondary text-uppercase small fw-bold mt-4 mb-2">⚡ Quick Action Triggers</h6>
                 <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-outline-primary btn-sm text-start" onclick="generateSimulatedAction('AWS_CLOUDWATCH')">
+                        ☁️ <strong>AWS CloudWatch Exporter:</strong> SECURITY_TEST: Lambda generated a test log
+                    </button>
                     <button class="btn btn-outline-info btn-sm text-start" onclick="generateSimulatedAction('USER_LOGIN')">
                         🔑 <strong>Simulate User Auth:</strong> IAM Auditor login event (IPv4 + Session ID)
                     </button>
@@ -271,6 +274,29 @@ function generateSimulatedAction(type) {
     let logMsg = '';
 
     switch(type) {
+        case 'AWS_CLOUDWATCH':
+            fetch('/logs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    messageType: "DATA_MESSAGE",
+                    logGroup: "/aws/lambda/log-exporter-test-source",
+                    logEvents: [
+                        {
+                            id: "evt_" + Date.now(),
+                            timestamp: Date.now(),
+                            message: "SECURITY_TEST: Lambda generated a test log [TraceID=" + Math.random().toString(36).substring(2, 10) + "]"
+                        }
+                    ]
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                logToConsole(`☁️ AWS CloudWatch event ingested via POST /logs (${data.events_received} event)`);
+                refreshLogs();
+            })
+            .catch(err => logToConsole(`❌ Ingestion error: ${err}`));
+            return;
         case 'USER_LOGIN':
             logMsg = `[IAM_AUTH] Action=Login User=auditor_01 Result=SUCCESS IP=${randomIP} Session=${randomSess}`;
             break;

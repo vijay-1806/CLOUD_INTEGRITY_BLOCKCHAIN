@@ -508,6 +508,84 @@ def api_demo_state():
         "node2_peers": node2_peers
     })
 
+# ── AWS CloudWatch Log Receiver Endpoint ───────────────────────────
+@app.route('/logs', methods=['GET', 'POST'])
+def aws_cloudwatch_receiver():
+    """
+    Receives forwarded logs from AWS Exporter Lambda via ngrok or direct HTTP.
+    Extracts events, appends them to audit_live.log, where auto_anchor_worker
+    immediately notarizes their SHA-256 hashes to the Ethereum blockchain.
+    """
+    if request.method == 'GET':
+        return jsonify({
+            "status": "online",
+            "service": "AWS CloudWatch Blockchain Integrity Gateway",
+            "endpoint": "/logs",
+            "method": "POST",
+            "message": "Send JSON logs via POST from your Exporter Lambda to anchor them into the blockchain.",
+            "monitored_file": "audit_live.log",
+            "dashboard_url": "/demo"
+        }), 200
+
+    payload = request.get_json(silent=True) or {}
+    raw_text = request.get_data(as_text=True)
+
+    extracted_messages = []
+
+    # Format 1: Decoded CloudWatch subscription filter payload
+    if isinstance(payload, dict):
+        log_group = payload.get('logGroup', 'AWS_CLOUDWATCH')
+        if 'logEvents' in payload and isinstance(payload['logEvents'], list):
+            for event in payload['logEvents']:
+                msg = event.get('message', '').strip() if isinstance(event, dict) else str(event).strip()
+                if msg:
+                    extracted_messages.append(f"[{log_group}] {msg}")
+        elif 'message' in payload:
+            extracted_messages.append(f"[{log_group}] {str(payload['message']).strip()}")
+        elif 'log' in payload:
+            extracted_messages.append(f"[{log_group}] {str(payload['log']).strip()}")
+        elif 'event' in payload:
+            extracted_messages.append(f"[{log_group}] {str(payload['event']).strip()}")
+
+    # Format 2: JSON array of events
+    elif isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                msg = item.get('message') or item.get('log') or json.dumps(item)
+                extracted_messages.append(f"[AWS_EVENT] {msg.strip()}")
+            else:
+                extracted_messages.append(f"[AWS_EVENT] {str(item).strip()}")
+
+    # Format 3: Raw text fallback
+    if not extracted_messages and raw_text.strip():
+        for line in raw_text.splitlines():
+            line_str = line.strip()
+            if line_str:
+                extracted_messages.append(f"[AWS_RAW] {line_str}")
+
+    if not extracted_messages:
+        return jsonify({"status": "error", "message": "No log events found in payload"}), 400
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    written_lines = []
+
+    with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f_log, \
+         open(AUDIT_BACKUP_PATH, "a", encoding="utf-8") as f_bak:
+        for msg in extracted_messages:
+            formatted_line = f"[{timestamp}] {msg}"
+            f_log.write(formatted_line + "\n")
+            f_bak.write(formatted_line + "\n")
+            written_lines.append(formatted_line)
+            print(f" [AWS-INGEST] Appended from CloudWatch: {formatted_line[:75]}...")
+
+    return jsonify({
+        "status": "success",
+        "events_received": len(written_lines),
+        "target_file": "audit_live.log",
+        "blockchain_auto_anchoring": "ACTIVE",
+        "sample_event": written_lines[0] if written_lines else None
+    }), 200
+
 @app.route('/api/demo/action', methods=['POST'])
 def api_demo_action():
     data = request.get_json() or {}
