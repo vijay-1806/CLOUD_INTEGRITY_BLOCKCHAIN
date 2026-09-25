@@ -12,7 +12,7 @@ if (-not $LocalIP) { $LocalIP = "127.0.0.1" }
 Write-Host "Main Node (PC1) IP: $LocalIP" -ForegroundColor Green
 
 # 2. Get Node 2 IP
-$DefaultNode2IP = "10.58.13.94"
+$DefaultNode2IP = "10.58.12.4"
 $InputNode2IP = Read-Host "Enter Node 2 (Peer) IP [Default: $DefaultNode2IP]"
 if ([string]::IsNullOrWhiteSpace($InputNode2IP)) {
     $Node2IP = $DefaultNode2IP
