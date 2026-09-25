@@ -53,10 +53,19 @@ if (Test-Path $LocalGeth) {
     }
 }
 
-# 2. Stop running Geth processes cleanly
-Write-Host "`nStopping any running Geth processes..." -ForegroundColor DarkYellow
+# 2. Stop running Geth processes cleanly & free ports
+Write-Host "`nStopping any running Geth processes and freeing ports..." -ForegroundColor DarkYellow
 Get-Process geth -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
+
+$busyPorts = Get-NetTCPConnection -LocalPort 8546, 30312 -ErrorAction SilentlyContinue
+if ($busyPorts) {
+    $busyPorts | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {
+        Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 1
+}
+
 while (Get-Process geth -ErrorAction SilentlyContinue) {
     Start-Sleep -Milliseconds 500
 }
@@ -105,8 +114,8 @@ if (-not $HasAccount) {
     Write-Host "$NewAcc"
 }
 
-# 6. Launch Geth Node 2
-Write-Host "`nStarting Geth Node 2 on Port 30312 / RPC 8546..." -ForegroundColor Cyan
+# 6. Launch Geth Node 2 in a dedicated window
+Write-Host "`nStarting Geth Node 2 on Port 30312 / RPC 8546 in separate window..." -ForegroundColor Cyan
 
 $GethArgs = @(
     "--datadir", $Node2Dir,
@@ -122,7 +131,7 @@ $GethArgs = @(
     "--nodiscover"
 )
 
-$GethProc = Start-Process -FilePath $GethExe -ArgumentList $GethArgs -PassThru -NoNewWindow
+$GethProc = Start-Process -FilePath $GethExe -ArgumentList $GethArgs -PassThru
 Start-Sleep -Seconds 4
 
 # 7. Connect to Node 1 (Main Node)
