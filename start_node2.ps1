@@ -1,3 +1,7 @@
+param(
+    [switch]$Reset
+)
+
 # LogChain Node 2 Windows Startup Script
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host "  LOGCHAIN NODE 2 STARTUP SCRIPT      " -ForegroundColor Cyan
@@ -9,6 +13,8 @@ $GethDataDir = Join-Path $Node2Dir "geth"
 $GenesisFile = Join-Path $ScriptDir "genesis.json"
 $BinDir = Join-Path $ScriptDir "bin"
 $LocalGeth = Join-Path $BinDir "geth.exe"
+$Node1IP = "10.58.12.19"
+$Node1Enode = "enode://d8f8982805ac294c6773c1b9c436f77e994a4575aebf04ae61369e1e9858e1509461d8cab8b8d40d61e962f881a05dba378bbdc754d31096dd69f5382a9c824b@$($Node1IP):30311"
 
 # 1. Ensure compatible Geth v1.13.14
 $GethExe = "geth.exe"
@@ -62,12 +68,29 @@ if (-not (Test-Path $PasswordFile)) {
     Set-Content -Path $PasswordFile -Value "node2" -NoNewline
 }
 
-# 4. Check and initialize genesis with v1.13.14
-if (-not (Test-Path $GethDataDir)) {
-    Write-Host "`nInitializing genesis block for Node 2 with Geth v1.13.14..." -ForegroundColor Yellow
-    & $GethExe --datadir $Node2Dir init $GenesisFile
-    Start-Sleep -Seconds 2
+# Check if Reset requested or genesis mismatch with Node 1
+$NeedReset = $Reset
+if (-not $NeedReset -and (Test-Path $GethDataDir)) {
+    try {
+        $n1Info = Invoke-RestMethod -Uri "http://$($Node1IP):8545" -Method Post -ContentType "application/json" -Body '{"jsonrpc":"2.0","method":"admin_nodeInfo","params":[],"id":1}' -TimeoutSec 3
+        $n1Genesis = $n1Info.result.protocols.eth.genesis
+        if ($n1Genesis -and $n1Genesis -ne "0x9c1ca7c9aa53f34043ee41c313ee49257cc79dc62c010c735f69a180a3546fe7") {
+            Write-Host "`n[!] Node 1 has updated genesis block ($n1Genesis). Auto-resetting Node 2 to synchronize..." -ForegroundColor Yellow
+            $NeedReset = $true
+        }
+    } catch {}
 }
+
+if ($NeedReset -and (Test-Path $GethDataDir)) {
+    Write-Host "`nWiping existing Node 2 chain database for clean genesis sync..." -ForegroundColor Yellow
+    Remove-Item -Path $GethDataDir -Recurse -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}
+
+# 4. Check and initialize genesis with v1.13.14
+Write-Host "`nInitializing genesis block..." -ForegroundColor Cyan
+$InitOutput = & $GethExe --datadir $Node2Dir init $GenesisFile 2>&1
+Write-Host "$InitOutput"
 
 # 5. Check if accounts exist
 Write-Host "`nChecking Node 2 accounts..." -ForegroundColor Cyan
@@ -78,8 +101,7 @@ $AccountAddress = "0x853402246552c3F46C3738a56109E2dcdb6cdCE3"
 $HasAccount = $AccountOutput -match "853402246552c3F46C3738a56109E2dcdb6cdCE3"
 
 if (-not $HasAccount) {
-    Write-Host "`nValidator 0x853402246552c3F46C3738a56109E2dcdb6cdCE3 not in keystore." -ForegroundColor Yellow
-    Write-Host "Creating local account for Node 2 peer..." -ForegroundColor Yellow
+    Write-Host "`nCreating local account for Node 2 peer..." -ForegroundColor Yellow
     $NewAcc = & $GethExe --datadir $Node2Dir account new --password $PasswordFile 2>&1
     Write-Host "$NewAcc"
 }
@@ -101,25 +123,16 @@ $GethArgs = @(
     "--nodiscover"
 )
 
-if ($HasAccount) {
-    $GethArgs += @(
-        "--unlock", $AccountAddress,
-        "--mine",
-        "--miner.etherbase", $AccountAddress
-    )
-}
-
 $GethProc = Start-Process -FilePath $GethExe -ArgumentList $GethArgs -PassThru -NoNewWindow
-Start-Sleep -Seconds 5
+Start-Sleep -Seconds 4
 
 # 7. Connect to Node 1 (Main Node)
-$Node1IP = "10.58.12.19"
 Write-Host "`nConnecting to Main Node 1 at $Node1IP..." -ForegroundColor Cyan
 
 $PeerPayload = @{
     jsonrpc = "2.0"
     method  = "admin_addPeer"
-    params  = @("enode://697d555df59d7790c94b650c735aa7dcbf10e9627a744c31f261a608e906d6a67d78f055570e22db98f26fab87d2dba9ebd6b3c11fb2bff83d91ea2ba76552dd@$($Node1IP):30311")
+    params  = @($Node1Enode)
     id      = 1
 } | ConvertTo-Json
 
