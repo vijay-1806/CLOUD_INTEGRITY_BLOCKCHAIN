@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row mb-4">
+<div class="row mb-3">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
                 <h2 class="fw-bold mb-1" style="background: var(--gradient-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                    ⚡ Interactive Action Generator & Tamper Testbed
+                    ⚡ Live Action Generator & Automatic Blockchain Notary
                 </h2>
                 <p class="text-secondary mb-0 small">
-                    Generate live audit logs via cursor tracking & user actions, anchor them immutably to Ethereum Node 1 & Node 2, simulate unauthorized tampering, and verify cryptographic integrity.
+                    User actions & cursor tracking are logged directly to <code class="text-warning fw-bold">audit_live.log</code> in your project root, automatically anchored to Ethereum blocks in real-time, and continuously verified for tampering.
                 </p>
             </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline-info btn-sm" onclick="runVerification()">
-                    <span id="verifySpinner" class="spinner-border spinner-border-sm d-none"></span>
-                    🔍 Verify Blockchain Integrity
-                </button>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge bg-success border border-success p-2">
+                    <span class="spinner-grow spinner-grow-sm me-1" style="width: 8px; height: 8px;"></span>
+                    Auto-Anchor: ON
+                </span>
                 <button class="btn btn-outline-danger btn-sm" onclick="restoreOriginalLogs()">
                     🔄 Restore Original Logs
                 </button>
@@ -25,40 +25,58 @@
     </div>
 </div>
 
+<!-- Project Log File Location Callout -->
+<div class="alert alert-dark border border-secondary mb-4 p-3 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background: rgba(17, 26, 51, 0.8);">
+    <div>
+        <span class="text-info fw-bold">📂 Monitored Project Log File:</span>
+        <span class="badge bg-dark border border-info font-monospace text-warning px-2 py-1 ms-1 fs-6" id="monitoredFilePath">audit_live.log</span>
+        <div class="small text-secondary mt-1">
+            👉 <strong>Try it now:</strong> Open <code class="text-white">audit_live.log</code> in Notepad, change any word or number, and hit <kbd>Ctrl+S</kbd>. This page will immediately flag the tampering!
+        </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-dim small">Live File Status:</span>
+        <span class="badge bg-primary" id="fileStatusBadge">Monitoring Live File</span>
+    </div>
+</div>
+
 <!-- Network & Contract Live Telemetry Header -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="card p-3 h-100 border-info border-opacity-25" style="background: rgba(0, 229, 255, 0.04);">
-            <div class="text-secondary small text-uppercase fw-bold mb-1">🖥️ Node 1 (Main)</div>
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-success">Online</span>
+            <div class="text-secondary small text-uppercase fw-bold mb-1">🖥️ Node 1 (This Machine)</div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-success">Online & Mining</span>
                 <span class="text-info fw-bold small">10.58.12.19:8545</span>
             </div>
-            <div class="text-dim small mt-1">Mining Clique Blocks (2s period)</div>
+            <div class="d-flex align-items-center gap-2 mt-1">
+                <span id="node1PeerBadge" class="badge bg-secondary">Checking Peers...</span>
+                <span class="text-dim small">Clique PoA (2s)</span>
+            </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card p-3 h-100 border-info border-opacity-25" style="background: rgba(0, 229, 255, 0.04);">
-            <div class="text-secondary small text-uppercase fw-bold mb-1">🖥️ Node 2 (Peer)</div>
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-success" id="node2Badge">Connected</span>
+            <div class="text-secondary small text-uppercase fw-bold mb-1">🖥️ Node 2 (Peer Machine)</div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-secondary" id="node2Badge">Checking...</span>
                 <span class="text-info fw-bold small">10.58.12.4:8546</span>
             </div>
-            <div class="text-dim small mt-1">P2P Synchronized Validator</div>
+            <div class="text-dim small mt-1" id="node2Detail">Checking RPC...</div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card p-3 h-100 border-info border-opacity-25" style="background: rgba(0, 229, 255, 0.04);">
             <div class="text-secondary small text-uppercase fw-bold mb-1">📦 Latest Ethereum Block</div>
             <div class="h4 fw-bold text-white mb-0" id="blockHeightDisplay">Loading...</div>
-            <div class="text-dim small mt-1">Immutable Ledger Height</div>
+            <div class="text-dim small mt-1">Advancing continuously</div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card p-3 h-100 border-info border-opacity-25" style="background: rgba(0, 229, 255, 0.04);">
             <div class="text-secondary small text-uppercase fw-bold mb-1">📜 Smart Contract V2</div>
-            <div class="small text-truncate text-warning font-monospace" id="contractAddressDisplay">0xC339e3B383333CAB68EbA145dEf8904864151c2E</div>
-            <div class="text-dim small mt-1">Per-Line SHA256 Notary</div>
+            <div class="small text-truncate text-warning font-monospace" id="contractAddressDisplay">0xC339...</div>
+            <div class="text-dim small mt-1">Per-Line Hash Registry</div>
         </div>
     </div>
 </div>
@@ -80,14 +98,14 @@
                 <div id="trackingArena" style="height: 180px; background: radial-gradient(circle at center, #13203f 0%, #080d1c 100%); border: 2px dashed rgba(0, 229, 255, 0.3); border-radius: 12px; position: relative; overflow: hidden; cursor: crosshair;" class="d-flex flex-column justify-content-center align-items-center text-center p-3">
                     <div id="radarPing" style="position: absolute; width: 20px; height: 20px; border-radius: 50%; background: rgba(0, 229, 255, 0.6); pointer-events: none; transform: translate(-50%, -50%); display: none; box-shadow: 0 0 20px #00e5ff;"></div>
                     <div class="fw-bold text-info mb-1" style="font-size: 1.1rem;">MOVE CURSOR OR CLICK HERE</div>
-                    <div class="text-secondary small mb-2">Every movement & click generates structured audit telemetry</div>
+                    <div class="text-secondary small mb-2">Every movement appends to <code>audit_live.log</code> & auto-anchors to blockchain</div>
                     <div class="badge bg-dark border border-secondary font-monospace px-3 py-2" id="cursorTelemetry">
                         X: 0px | Y: 0px | Events Captured: <span id="eventCounter">0</span>
                     </div>
                 </div>
 
                 <!-- Simulation Quick-Triggers -->
-                <h6 class="text-secondary text-uppercase small fw-bold mt-4 mb-2">⚡ Simulate System & Security Actions</h6>
+                <h6 class="text-secondary text-uppercase small fw-bold mt-4 mb-2">⚡ Quick Action Triggers</h6>
                 <div class="d-grid gap-2 mb-3">
                     <button class="btn btn-outline-info btn-sm text-start" onclick="generateSimulatedAction('USER_LOGIN')">
                         🔑 <strong>Simulate User Auth:</strong> IAM Auditor login event (IPv4 + Session ID)
@@ -105,8 +123,8 @@
 
                 <!-- Custom Action Input -->
                 <div class="input-group input-group-sm">
-                    <input type="text" id="customActionInput" class="form-control bg-dark text-white border-secondary" placeholder="Type custom log event (e.g. Vijay edited firewall)">
-                    <button class="btn btn-primary" onclick="generateCustomAction()">Record Event</button>
+                    <input type="text" id="customActionInput" class="form-control bg-dark text-white border-secondary" placeholder="Type custom log (e.g. Vijay changed firewall rule)">
+                    <button class="btn btn-primary" onclick="generateCustomAction()">Append & Anchor</button>
                 </div>
             </div>
         </div>
@@ -114,12 +132,12 @@
         <!-- Live Event Feed Terminal -->
         <div class="card">
             <div class="card-header bg-dark border-secondary d-flex justify-content-between align-items-center">
-                <span class="fw-bold text-light">📡 Live Event Console</span>
-                <span class="badge bg-secondary small" id="consoleBadge">Active Stream</span>
+                <span class="fw-bold text-light">📡 Live Blockchain Notary Feed</span>
+                <span class="badge bg-success small">Real-Time</span>
             </div>
             <div class="card-body p-2">
                 <div id="liveConsole" style="height: 180px; overflow-y: auto; background: #070c18; border-radius: 8px; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #73e3a9;">
-                    <div>[SYSTEM_READY] Blockchain listener initialized on Case DEMO-SESSION-001...</div>
+                    <div>[DAEMON_READY] Auto-anchoring daemon active on audit_live.log...</div>
                 </div>
             </div>
         </div>
@@ -130,24 +148,21 @@
         <div class="card mb-4">
             <div class="card-header bg-dark border-secondary d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <span class="fw-bold text-light">📋 Log Entries & Cryptographic Audit Status</span>
+                    <span class="fw-bold text-light">📋 Live File Content & Blockchain Cryptographic Audit</span>
                     <span class="badge bg-info ms-2" id="logCountBadge">0 Entries</span>
                 </div>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-success fw-bold px-3" onclick="anchorToBlockchain()" id="anchorBtn">
-                        <span id="anchorSpinner" class="spinner-border spinner-border-sm d-none"></span>
-                        🚀 Anchor to Blockchain
-                    </button>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-dark border border-secondary text-secondary small">Auto-checking every 1.5s</span>
                 </div>
             </div>
 
             <!-- Verification Status Banner -->
-            <div id="auditStatusBanner" class="p-3 border-bottom border-secondary d-flex align-items-center justify-content-between" style="background: rgba(34, 197, 94, 0.08);">
+            <div id="auditStatusBanner" class="p-3 border-bottom border-secondary d-flex align-items-center justify-content-between" style="background: rgba(34, 197, 94, 0.08); transition: all 0.3s ease;">
                 <div class="d-flex align-items-center gap-2">
                     <span class="fs-4" id="auditIcon">🛡️</span>
                     <div>
-                        <div class="fw-bold text-white" id="auditHeadline">System Ready for Audit</div>
-                        <div class="text-secondary small" id="auditSubtext">Generate actions on the left, anchor them to the blockchain, then test tampering!</div>
+                        <div class="fw-bold text-white fs-6" id="auditHeadline">Blockchain Integrity Verified</div>
+                        <div class="text-secondary small" id="auditSubtext">All local log lines in audit_live.log match the hashes sealed on the Ethereum network.</div>
                     </div>
                 </div>
                 <div id="tamperCountBadge" class="badge bg-secondary px-3 py-2 fs-6">0 Tampered</div>
@@ -159,17 +174,17 @@
                         <thead>
                             <tr>
                                 <th style="width: 50px;">#</th>
-                                <th>Log Content (Local File)</th>
-                                <th>Local SHA-256 vs Blockchain Hash</th>
-                                <th style="width: 130px;">Integrity Status</th>
-                                <th style="width: 140px; text-align: center;">Tamper Test</th>
+                                <th>Log Line in <code>audit_live.log</code></th>
+                                <th>Local SHA-256 vs Blockchain Record</th>
+                                <th style="width: 140px;">Integrity Status</th>
+                                <th style="width: 110px; text-align: center;">Simulate</th>
                             </tr>
                         </thead>
                         <tbody id="logTableBody">
                             <tr>
                                 <td colspan="5" class="text-center text-secondary py-5">
-                                    <div class="mb-2 fs-3">🖱️</div>
-                                    <div>No log entries generated yet. Move your mouse in the pad or click an action button!</div>
+                                    <div class="spinner-border text-info mb-2"></div>
+                                    <div>Loading audit logs...</div>
                                 </td>
                             </tr>
                         </tbody>
@@ -177,24 +192,24 @@
                 </div>
             </div>
             <div class="card-footer bg-dark border-secondary d-flex justify-content-between align-items-center small text-secondary">
-                <span>Case ID: <code class="text-info">DEMO-SESSION-001</code></span>
-                <span>Monitored File: <code class="text-white">sample log/demo_action_tracker.log</code></span>
+                <span>Case ID: <code class="text-info" id="caseIdDisplay">AUDIT_LIVE_LOG</code></span>
+                <span>File: <code class="text-warning">audit_live.log</code> (Project Root)</span>
             </div>
         </div>
 
         <!-- Educational Explainer Card -->
         <div class="card border-info border-opacity-25" style="background: rgba(0, 229, 255, 0.03);">
             <div class="card-body">
-                <h6 class="fw-bold text-info mb-2">💡 How Does Blockchain Tamper Detection Work?</h6>
+                <h6 class="fw-bold text-info mb-2">🔍 How Tamper Detection Works with audit_live.log:</h6>
                 <div class="small text-secondary">
                     <p class="mb-1">
-                        1. <strong>Local Log Generation:</strong> User actions generate timestamps and payloads, which get hashed using standard SHA-256.
+                        1. <strong>Automatic Anchoring:</strong> Whenever a log line is added to <code>audit_live.log</code>, the background worker automatically hashes it with SHA-256 and calls <code>appendEntryHash()</code> on the smart contract.
                     </p>
                     <p class="mb-1">
-                        2. <strong>Blockchain Anchoring:</strong> The SHA-256 hash is sealed into Ethereum smart contract <code>LogIntegrityV2</code> across Node 1 & Node 2. It is mathematically immutable.
+                        2. <strong>File Editing Detection:</strong> Open <code>audit_live.log</code> on your computer in VS Code or Notepad. Change any word or number (e.g. from <code>$5000.00</code> to <code>$9999.00</code>) and save (<kbd>Ctrl+S</kbd>).
                     </p>
                     <p class="mb-0">
-                        3. <strong>Tamper Exposure:</strong> When someone alters even a single character in the local log file, its new SHA-256 hash changes completely (Avalanche effect). The blockchain comparison reveals the mismatch immediately, proving unauthorized alteration!
+                        3. <strong>Instant Hash Mismatch:</strong> Within 1.5 seconds, the dashboard reads the modified line, calculates its new hash, and compares it against the Ethereum block. Since the hashes do not match, it immediately flags <strong>🚨 TAMPER DETECTED</strong> in red!
                     </p>
                 </div>
             </div>
@@ -217,7 +232,6 @@ arena.addEventListener('mousemove', (e) => {
     const y = Math.round(e.clientY - rect.top);
     lastX = x; lastY = y;
     
-    // Update radar dot
     radar.style.left = `${x}px`;
     radar.style.top = `${y}px`;
     radar.style.display = 'block';
@@ -225,7 +239,7 @@ arena.addEventListener('mousemove', (e) => {
     document.getElementById('cursorTelemetry').innerHTML = `X: ${x}px | Y: ${y}px | Events Captured: <span id="eventCounter">${eventCount}</span>`;
 
     const now = Date.now();
-    if (document.getElementById('autoCursorToggle').checked && now - lastMoveTime > 1200) {
+    if (document.getElementById('autoCursorToggle').checked && now - lastMoveTime > 1500) {
         lastMoveTime = now;
         sendActionLog(`[CURSOR_POINTER] Position=(${x},${y}) Region=Sandbox Canvas Speed=${Math.round(Math.random()*200+50)}px/s`);
     }
@@ -285,7 +299,7 @@ function generateCustomAction() {
 function sendActionLog(logText) {
     eventCount++;
     document.getElementById('eventCounter').textContent = eventCount;
-    logToConsole(`📝 Generated action: ${logText.substring(0, 45)}...`);
+    logToConsole(`📝 Wrote to audit_live.log: ${logText.substring(0, 42)}... (auto-anchoring)`);
 
     fetch('/api/demo/action', {
         method: 'POST',
@@ -309,15 +323,52 @@ function refreshLogs() {
         document.getElementById('blockHeightDisplay').textContent = `Block #${data.block_number || 0}`;
         document.getElementById('contractAddressDisplay').textContent = data.contract_address || '0xC339...';
         document.getElementById('logCountBadge').textContent = `${currentLogs.length} Entries`;
+        if (data.file_path) {
+            document.getElementById('monitoredFilePath').textContent = data.file_path;
+        }
+        if (data.case_id) {
+            document.getElementById('caseIdDisplay').textContent = data.case_id;
+        }
+
+        // Node 1 Peer Telemetry
+        const n1Peers = data.node1_peers || 0;
+        const n1Badge = document.getElementById('node1PeerBadge');
+        if (n1Badge) {
+            if (n1Peers > 0) {
+                n1Badge.textContent = `🟢 ${n1Peers} Peer Connected`;
+                n1Badge.className = 'badge bg-success';
+            } else {
+                n1Badge.textContent = `🟡 0 Peers (Solo Sealer)`;
+                n1Badge.className = 'badge bg-warning text-dark';
+            }
+        }
+
+        // Node 2 Telemetry
+        const n2Badge = document.getElementById('node2Badge');
+        const n2Detail = document.getElementById('node2Detail');
+        if (n2Badge && n2Detail) {
+            if (data.node2_connected) {
+                n2Badge.textContent = `🟢 RPC Online`;
+                n2Badge.className = 'badge bg-success';
+                n2Detail.innerHTML = (data.node2_peers > 0 || n1Peers > 0)
+                    ? `<span class="text-success fw-bold">✔ Connected & Peered</span>`
+                    : `<span class="text-warning">Online (Syncing with Node 1)</span>`;
+            } else {
+                n2Badge.textContent = `🔴 Offline`;
+                n2Badge.className = 'badge bg-secondary';
+                n2Detail.textContent = `Run start_node2.ps1 on 10.58.12.4`;
+            }
+        }
 
         renderLogTable(data);
-    });
+    })
+    .catch(() => {});
 }
 
 function renderLogTable(data) {
     const tbody = document.getElementById('logTableBody');
     if (!currentLogs.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-5">No log entries generated yet. Move your mouse in the pad or click an action button!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-5">No log entries found. Move your mouse in the pad or click an action button!</td></tr>`;
         return;
     }
 
@@ -333,7 +384,7 @@ function renderLogTable(data) {
         let badgeHtml = '';
 
         if (!isAnchored) {
-            badgeHtml = `<span class="badge bg-secondary">⏳ Pending Anchor</span>`;
+            badgeHtml = `<span class="badge bg-secondary"><span class="spinner-border spinner-border-sm me-1" style="width: 8px; height: 8px;"></span> Anchoring...</span>`;
         } else if (isTampered) {
             rowClass = 'row-tampered';
             badgeHtml = `<span class="badge bg-danger">🚨 TAMPER DETECTED</span>`;
@@ -356,14 +407,9 @@ function renderLogTable(data) {
             </td>
             <td>${badgeHtml}</td>
             <td class="text-center">
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-warning" onclick="tamperEntry(${idx})" title="Simulate Unauthorized Modification">
-                        ⚡ Tamper
-                    </button>
-                    <button class="btn btn-outline-danger" onclick="deleteEntry(${idx})" title="Simulate File Truncation / Deletion">
-                        🗑️
-                    </button>
-                </div>
+                <button class="btn btn-outline-warning btn-sm" onclick="tamperEntry(${idx})" title="Simulate Unauthorized Modification in audit_live.log">
+                    ⚡ Tamper
+                </button>
             </td>
         </tr>
         `;
@@ -381,54 +427,30 @@ function renderLogTable(data) {
     badge.textContent = `${tamperedCount} Tampered`;
 
     if (tamperedCount > 0) {
-        banner.style.background = 'rgba(239, 68, 68, 0.15)';
-        headline.className = 'fw-bold text-danger';
-        headline.textContent = `🚨 CRYPTOGRAPHIC TAMPER DETECTED (${tamperedCount} Corrupted Entries)`;
-        subtext.textContent = 'The Ethereum smart contract detected unauthorized modifications in the local log stream!';
+        banner.style.background = 'rgba(239, 68, 68, 0.2)';
+        banner.style.borderLeft = '5px solid #ef4444';
+        headline.className = 'fw-bold text-danger fs-5';
+        headline.textContent = `🚨 CRITICAL ALERT: TAMPER DETECTED IN audit_live.log!`;
+        subtext.textContent = `Found ${tamperedCount} line(s) where local SHA-256 does NOT match the immutable hash on the Ethereum blockchain!`;
         icon.textContent = '🚨';
         badge.className = 'badge bg-danger px-3 py-2 fs-6';
     } else if (currentLogs.some(l => l.is_anchored)) {
         banner.style.background = 'rgba(34, 197, 94, 0.12)';
-        headline.className = 'fw-bold text-success';
+        banner.style.borderLeft = '5px solid #22c55e';
+        headline.className = 'fw-bold text-success fs-6';
         headline.textContent = '✅ 100% BLOCKCHAIN INTEGRITY VERIFIED';
-        subtext.textContent = 'All log hashes match the immutable records sealed across Ethereum Node 1 & Node 2.';
+        subtext.textContent = 'Every line in audit_live.log matches the cryptographic seal on Ethereum Node 1 & Node 2.';
         icon.textContent = '🛡️';
         badge.className = 'badge bg-success px-3 py-2 fs-6';
     }
 }
 
-function anchorToBlockchain() {
-    const btn = document.getElementById('anchorBtn');
-    const spinner = document.getElementById('anchorSpinner');
-    btn.disabled = true;
-    spinner.classList.remove('d-none');
-    logToConsole('📤 Submitting unanchored log hashes to Ethereum LogIntegrityV2 contract...');
-
-    fetch('/api/demo/anchor', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-        btn.disabled = false;
-        spinner.classList.add('d-none');
-        if (data.success) {
-            logToConsole(`⛓️ Anchored ${data.submitted_count} entries to Block #${data.block_number}! Tx: ${data.tx_hash.substring(0, 18)}...`);
-            refreshLogs();
-        } else {
-            logToConsole(`⚠️ Anchor error: ${data.error}`);
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        spinner.classList.add('d-none');
-        logToConsole(`❌ Network error: ${err}`);
-    });
-}
-
 function tamperEntry(index) {
     const current = currentLogs[index];
-    const newText = prompt("Enter tampered content for this log line:", current.content + " [TAMPERED_BY_ATTACKER_PAYLOAD]");
+    const newText = prompt("Enter tampered content for line #" + (index + 1) + " (or edit audit_live.log in Notepad directly):", current.content + " [UNAUTHORIZED_TAMPER_MODIFICATION]");
     if (newText === null || newText === current.content) return;
 
-    logToConsole(`😈 Tampering with Entry #${index + 1}...`);
+    logToConsole(`😈 Tampering with Line #${index + 1} in audit_live.log...`);
     fetch('/api/demo/tamper', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -437,59 +459,24 @@ function tamperEntry(index) {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            logToConsole(`🚨 Tampered Entry #${index + 1}. Running verification...`);
-            refreshLogs();
-        }
-    });
-}
-
-function deleteEntry(index) {
-    if (!confirm(`Simulate unauthorized deletion of Entry #${index + 1}?`)) return;
-    logToConsole(`🗑️ Deleting Entry #${index + 1} from local log file...`);
-    fetch('/api/demo/delete', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ index: index })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            logToConsole(`❌ Deleted Entry #${index + 1}. Running verification...`);
+            logToConsole(`🚨 Tampered Line #${index + 1}! Verifying against blockchain...`);
             refreshLogs();
         }
     });
 }
 
 function restoreOriginalLogs() {
-    logToConsole('🔄 Restoring original untampered logs from backup...');
+    logToConsole('🔄 Restoring original untampered audit_live.log from backup...');
     fetch('/api/demo/restore', { method: 'POST' })
     .then(r => r.json())
     .then(data => {
-        logToConsole('✅ Logs restored to clean state.');
+        logToConsole('✅ audit_live.log restored to clean state.');
         refreshLogs();
     });
 }
 
-function runVerification() {
-    const spinner = document.getElementById('verifySpinner');
-    spinner.classList.remove('d-none');
-    logToConsole('🔍 Performing full cryptographic audit against Ethereum Node 1 & Node 2...');
-
-    fetch('/api/demo/verify')
-    .then(r => r.json())
-    .then(data => {
-        spinner.classList.add('d-none');
-        logToConsole(`Audit Complete: ${data.all_ok ? '✅ All lines match blockchain' : '🚨 Cryptographic tampering detected!'}`);
-        refreshLogs();
-    })
-    .catch(err => {
-        spinner.classList.add('d-none');
-        logToConsole(`Verification error: ${err}`);
-    });
-}
-
-// Initial load & periodic poll
+// Initial load & fast periodic poll (every 1.5 seconds)
 refreshLogs();
-setInterval(refreshLogs, 4000);
+setInterval(refreshLogs, 1500);
 </script>
 {% endblock %}

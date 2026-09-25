@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import hashlib
+import threading
+import time
 from datetime import datetime
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -389,22 +391,59 @@ def api_entries(case_id):
 
 # ── Interactive Action & Tamper Testbed Routes ─────────────────────
 
-DEMO_CASE_ID = "DEMO-SESSION-001"
-DEMO_DIR = os.path.join(BASE_DIR, "sample log")
-os.makedirs(DEMO_DIR, exist_ok=True)
-DEMO_LOG_PATH = os.path.join(DEMO_DIR, "demo_action_tracker.log")
-DEMO_BACKUP_PATH = os.path.join(DEMO_DIR, "demo_action_tracker.backup.log")
+DEMO_CASE_ID = "AUDIT_LIVE_LOG"
+AUDIT_LOG_PATH = os.path.join(BASE_DIR, "audit_live.log")
+AUDIT_BACKUP_PATH = os.path.join(BASE_DIR, "audit_live.backup.log")
+
+# Auto-Anchor Daemon Thread
+def auto_anchor_worker():
+    """Background worker that continuously anchors new log lines to Ethereum LogIntegrityV2."""
+    from hash_and_submit import send_tx, ACCOUNT
+    while True:
+        try:
+            if contract_v2 and w3.is_connected() and os.path.exists(AUDIT_LOG_PATH):
+                with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
+                    lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+                try:
+                    chain_count = contract_v2.functions.getEntryCount(DEMO_CASE_ID).call()
+                except Exception:
+                    chain_count = 0
+
+                if len(lines) > chain_count:
+                    new_lines = lines[chain_count:]
+                    nonce = w3.eth.get_transaction_count(ACCOUNT)
+                    last_tx = None
+                    for i, line in enumerate(new_lines):
+                        line_idx = chain_count + i
+                        line_hash = sha256_line(line)
+                        last_tx = send_tx(
+                            contract_v2.functions.appendEntryHash(DEMO_CASE_ID, line_idx, line_hash),
+                            nonce,
+                            label=f"auto[{line_idx}]"
+                        )
+                        nonce += 1
+                        print(f" [AUTO-ANCHOR] Submitted line #{line_idx + 1} hash={line_hash[:16]}... tx={last_tx.hex()[:18]}...")
+                    if last_tx:
+                        receipt = w3.eth.wait_for_transaction_receipt(last_tx, timeout=12)
+                        print(f" [AUTO-ANCHOR] Sealed block #{receipt.blockNumber} for {len(new_lines)} lines")
+        except Exception as e:
+            # print error only if not network wait
+            pass
+        time.sleep(1.5)
+
+threading.Thread(target=auto_anchor_worker, daemon=True).start()
 
 @app.route('/demo')
 def demo_page():
-    return render_template('demo.html')
+    return render_template('demo.html', log_file_name="audit_live.log")
 
 @app.route('/api/demo/state')
 def api_demo_state():
     logs = []
     lines = []
-    if os.path.exists(DEMO_LOG_PATH):
-        with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(AUDIT_LOG_PATH):
+        with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
             lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
 
     chain_count = 0
@@ -415,9 +454,22 @@ def api_demo_state():
             chain_count = 0
 
     block_num = 0
+    node1_peers = 0
     if w3.is_connected():
         try:
             block_num = w3.eth.block_number
+            node1_peers = int(w3.net.peer_count)
+        except:
+            pass
+
+    node2_connected = False
+    node2_peers = 0
+    if NODE2_RPC_URL:
+        try:
+            w2 = Web3(Web3.HTTPProvider(NODE2_RPC_URL))
+            if w2.is_connected():
+                node2_connected = True
+                node2_peers = int(w2.net.peer_count)
         except:
             pass
 
@@ -448,7 +500,12 @@ def api_demo_state():
         "logs": logs,
         "block_number": block_num,
         "contract_address": CONTRACT_ADDRESS_V2,
-        "chain_count": chain_count
+        "chain_count": chain_count,
+        "file_name": "audit_live.log",
+        "file_path": AUDIT_LOG_PATH,
+        "node1_peers": node1_peers,
+        "node2_connected": node2_connected,
+        "node2_peers": node2_peers
     })
 
 @app.route('/api/demo/action', methods=['POST'])
@@ -461,10 +518,10 @@ def api_demo_action():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     formatted_line = f"[{timestamp}] {action_text}"
 
-    with open(DEMO_LOG_PATH, "a", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(formatted_line + "\n")
 
-    with open(DEMO_BACKUP_PATH, "a", encoding="utf-8") as f:
+    with open(AUDIT_BACKUP_PATH, "a", encoding="utf-8") as f:
         f.write(formatted_line + "\n")
 
     return jsonify({
@@ -478,10 +535,10 @@ def api_demo_anchor():
     if not contract_v2 or not w3.is_connected():
         return jsonify({"success": False, "error": "Blockchain or Contract V2 offline"}), 500
 
-    if not os.path.exists(DEMO_LOG_PATH):
+    if not os.path.exists(AUDIT_LOG_PATH):
         return jsonify({"success": False, "error": "No demo logs recorded yet"}), 400
 
-    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
         lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
 
     try:
@@ -526,17 +583,17 @@ def api_demo_tamper():
     idx = data.get('index')
     new_content = data.get('content')
 
-    if idx is None or not new_content or not os.path.exists(DEMO_LOG_PATH):
+    if idx is None or not new_content or not os.path.exists(AUDIT_LOG_PATH):
         return jsonify({"success": False, "error": "Invalid request"}), 400
 
-    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
         lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
 
     if idx < 0 or idx >= len(lines):
         return jsonify({"success": False, "error": "Index out of range"}), 400
 
     lines[idx] = new_content
-    with open(DEMO_LOG_PATH, "w", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(line + "\n")
 
@@ -547,17 +604,17 @@ def api_demo_delete():
     data = request.get_json() or {}
     idx = data.get('index')
 
-    if idx is None or not os.path.exists(DEMO_LOG_PATH):
+    if idx is None or not os.path.exists(AUDIT_LOG_PATH):
         return jsonify({"success": False, "error": "Invalid request"}), 400
 
-    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
         lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
 
     if idx < 0 or idx >= len(lines):
         return jsonify({"success": False, "error": "Index out of range"}), 400
 
     del lines[idx]
-    with open(DEMO_LOG_PATH, "w", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(line + "\n")
 
@@ -565,20 +622,20 @@ def api_demo_delete():
 
 @app.route('/api/demo/restore', methods=['POST'])
 def api_demo_restore():
-    if os.path.exists(DEMO_BACKUP_PATH):
-        with open(DEMO_BACKUP_PATH, "r", encoding="utf-8") as src:
+    if os.path.exists(AUDIT_BACKUP_PATH):
+        with open(AUDIT_BACKUP_PATH, "r", encoding="utf-8") as src:
             content = src.read()
-        with open(DEMO_LOG_PATH, "w", encoding="utf-8") as dst:
+        with open(AUDIT_LOG_PATH, "w", encoding="utf-8") as dst:
             dst.write(content)
         return jsonify({"success": True, "message": "Restored from backup"})
     return jsonify({"success": False, "error": "Backup file not found"}), 404
 
 @app.route('/api/demo/verify')
 def api_demo_verify():
-    if not os.path.exists(DEMO_LOG_PATH):
+    if not os.path.exists(AUDIT_LOG_PATH):
         return jsonify({"all_ok": True, "rows": []})
 
-    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+    with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
         lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
 
     chain_count = 0
