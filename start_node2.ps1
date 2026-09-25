@@ -4,9 +4,55 @@ Write-Host "  LOGCHAIN NODE 2 STARTUP SCRIPT      " -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-# 1. Ensure directory and password file exist
 $Node2Dir = Join-Path $ScriptDir "node2"
+$GethDataDir = Join-Path $Node2Dir "geth"
+$GenesisFile = Join-Path $ScriptDir "genesis.json"
+$BinDir = Join-Path $ScriptDir "bin"
+$LocalGeth = Join-Path $BinDir "geth.exe"
+
+# 1. Ensure compatible Geth v1.13.14
+$GethExe = "geth.exe"
+if (Test-Path $LocalGeth) {
+    $GethExe = $LocalGeth
+} else {
+    $VerStr = & geth version 2>&1 | Select-String "Version:"
+    if ($VerStr -notmatch "1\.13\.") {
+        Write-Host "`n[!] Detected Geth version without Clique PoA support ($VerStr)." -ForegroundColor Yellow
+        Write-Host "--> Automatically downloading compatible Geth v1.13.14 (official archive)..." -ForegroundColor Cyan
+        
+        New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+        $ZipPath = Join-Path $BinDir "geth-1.13.14.zip"
+        
+        try {
+            curl.exe -L -o $ZipPath "https://gethstore.blob.core.windows.net/builds/geth-windows-amd64-1.13.14-2bd6bd01.zip"
+        } catch {
+            Invoke-WebRequest -Uri "https://gethstore.blob.core.windows.net/builds/geth-windows-amd64-1.13.14-2bd6bd01.zip" -OutFile $ZipPath
+        }
+        
+        Write-Host "Extracting Geth v1.13.14..." -ForegroundColor Cyan
+        Expand-Archive -Path $ZipPath -DestinationPath $BinDir -Force
+        
+        $Extracted = Get-ChildItem -Path $BinDir -Recurse -Filter "geth.exe" | Where-Object { $_.FullName -ne $LocalGeth } | Select-Object -First 1
+        if ($Extracted) {
+            Copy-Item -Path $Extracted.FullName -Destination $LocalGeth -Force
+            $GethExe = $LocalGeth
+            Write-Host "Successfully installed Geth v1.13.14 to: $LocalGeth" -ForegroundColor Green
+        }
+        
+        # Clean incompatible database from v1.14 run
+        if (Test-Path $GethDataDir) {
+            Write-Host "Cleaning incompatible database from previous run..." -ForegroundColor Yellow
+            Remove-Item -Path $GethDataDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# 2. Stop running Geth processes
+Write-Host "`nStopping any running Geth processes..." -ForegroundColor DarkYellow
+Get-Process geth -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
+# 3. Ensure directory and password file exist
 if (-not (Test-Path $Node2Dir)) {
     New-Item -ItemType Directory -Path $Node2Dir -Force | Out-Null
 }
@@ -16,36 +62,29 @@ if (-not (Test-Path $PasswordFile)) {
     Set-Content -Path $PasswordFile -Value "node2" -NoNewline
 }
 
-# 2. Check and initialize genesis if needed
-$GethDataDir = Join-Path $Node2Dir "geth"
-$GenesisFile = Join-Path $ScriptDir "genesis.json"
+# 4. Check and initialize genesis with v1.13.14
 if (-not (Test-Path $GethDataDir)) {
-    Write-Host "`nInitializing genesis block for Node 2..." -ForegroundColor Yellow
-    & geth --datadir $Node2Dir init $GenesisFile
+    Write-Host "`nInitializing genesis block for Node 2 with Geth v1.13.14..." -ForegroundColor Yellow
+    & $GethExe --datadir $Node2Dir init $GenesisFile
     Start-Sleep -Seconds 2
 }
 
-# 3. Kill existing geth processes on Node 2
-Write-Host "`nStopping any running Geth processes..." -ForegroundColor DarkYellow
-Get-Process geth -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-
-# 4. Check if validator account exists
+# 5. Check if accounts exist
 Write-Host "`nChecking Node 2 accounts..." -ForegroundColor Cyan
-$AccountOutput = & geth --datadir $Node2Dir account list 2>&1
+$AccountOutput = & $GethExe --datadir $Node2Dir account list 2>&1
 Write-Host "$AccountOutput"
 
 $AccountAddress = "0x853402246552c3F46C3738a56109E2dcdb6cdCE3"
 $HasAccount = $AccountOutput -match "853402246552c3F46C3738a56109E2dcdb6cdCE3"
 
 if (-not $HasAccount) {
-    Write-Host "`nValidator account 0x853402246552c3F46C3738a56109E2dcdb6cdCE3 not found in node2\keystore." -ForegroundColor Yellow
-    Write-Host "Creating a local node account..." -ForegroundColor Yellow
-    $NewAcc = & geth --datadir $Node2Dir account new --password $PasswordFile 2>&1
+    Write-Host "`nValidator 0x853402246552c3F46C3738a56109E2dcdb6cdCE3 not in keystore." -ForegroundColor Yellow
+    Write-Host "Creating local account for Node 2 peer..." -ForegroundColor Yellow
+    $NewAcc = & $GethExe --datadir $Node2Dir account new --password $PasswordFile 2>&1
     Write-Host "$NewAcc"
 }
 
-# 5. Launch Geth Node 2
+# 6. Launch Geth Node 2
 Write-Host "`nStarting Geth Node 2 on Port 30312 / RPC 8546..." -ForegroundColor Cyan
 
 $GethArgs = @(
@@ -70,12 +109,12 @@ if ($HasAccount) {
     )
 }
 
-$GethProc = Start-Process -FilePath "geth.exe" -ArgumentList $GethArgs -PassThru -NoNewWindow
-Start-Sleep -Seconds 4
+$GethProc = Start-Process -FilePath $GethExe -ArgumentList $GethArgs -PassThru -NoNewWindow
+Start-Sleep -Seconds 5
 
-# 6. Connect to Node 1 (Main Node)
+# 7. Connect to Node 1 (Main Node)
 $Node1IP = "10.58.12.19"
-Write-Host "`nConnecting to Node 1 at $Node1IP..." -ForegroundColor Cyan
+Write-Host "`nConnecting to Main Node 1 at $Node1IP..." -ForegroundColor Cyan
 
 $PeerPayload = @{
     jsonrpc = "2.0"
@@ -86,9 +125,14 @@ $PeerPayload = @{
 
 try {
     $PeerRes = Invoke-RestMethod -Uri "http://127.0.0.1:8546" -Method Post -ContentType "application/json" -Body $PeerPayload -TimeoutSec 3
-    Write-Host "admin_addPeer to Node 1 sent: $($PeerRes.result)" -ForegroundColor Green
+    Write-Host "admin_addPeer to Node 1 response: $($PeerRes.result)" -ForegroundColor Green
 } catch {
-    Write-Host "Warning: Could not connect to Node 2 RPC. It may still be starting." -ForegroundColor Yellow
+    Write-Host "Warning: Could not connect to Node 2 RPC yet. Retrying in 2 seconds..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 2
+    try {
+        $PeerRes = Invoke-RestMethod -Uri "http://127.0.0.1:8546" -Method Post -ContentType "application/json" -Body $PeerPayload -TimeoutSec 3
+        Write-Host "admin_addPeer to Node 1 response: $($PeerRes.result)" -ForegroundColor Green
+    } catch {}
 }
 
 Start-Sleep -Seconds 2
@@ -96,7 +140,7 @@ Start-Sleep -Seconds 2
 # Check peer count
 try {
     $PeerCountRes = Invoke-RestMethod -Uri "http://127.0.0.1:8546" -Method Post -ContentType "application/json" -Body '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' -TimeoutSec 3
-    Write-Host "`nCurrent Peer Count: $($PeerCountRes.result)" -ForegroundColor White
+    Write-Host "`nCurrent Peer Count on Node 2: $($PeerCountRes.result)" -ForegroundColor White
 } catch {}
 
 Write-Host "`n======================================" -ForegroundColor Green
