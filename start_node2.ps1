@@ -53,10 +53,13 @@ if (Test-Path $LocalGeth) {
     }
 }
 
-# 2. Stop running Geth processes
+# 2. Stop running Geth processes cleanly
 Write-Host "`nStopping any running Geth processes..." -ForegroundColor DarkYellow
 Get-Process geth -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
+while (Get-Process geth -ErrorAction SilentlyContinue) {
+    Start-Sleep -Milliseconds 500
+}
 
 # 3. Ensure directory and password file exist
 if (-not (Test-Path $Node2Dir)) {
@@ -68,21 +71,8 @@ if (-not (Test-Path $PasswordFile)) {
     Set-Content -Path $PasswordFile -Value "node2" -NoNewline
 }
 
-# Check if Reset requested or genesis mismatch with Node 1
-$NeedReset = $Reset
-if (-not $NeedReset -and (Test-Path $GethDataDir)) {
-    try {
-        $n1Info = Invoke-RestMethod -Uri "http://$($Node1IP):8545" -Method Post -ContentType "application/json" -Body '{"jsonrpc":"2.0","method":"admin_nodeInfo","params":[],"id":1}' -TimeoutSec 3
-        $n1Genesis = $n1Info.result.protocols.eth.genesis
-        if ($n1Genesis -and $n1Genesis -ne "0x9c1ca7c9aa53f34043ee41c313ee49257cc79dc62c010c735f69a180a3546fe7") {
-            Write-Host "`n[!] Node 1 has updated genesis block ($n1Genesis). Auto-resetting Node 2 to synchronize..." -ForegroundColor Yellow
-            $NeedReset = $true
-        }
-    } catch {}
-}
-
-if ($NeedReset -and (Test-Path $GethDataDir)) {
-    Write-Host "`nWiping existing Node 2 chain database for clean genesis sync..." -ForegroundColor Yellow
+if ($Reset -and (Test-Path $GethDataDir)) {
+    Write-Host "`n-Reset flag passed: Wiping existing Node 2 chain database..." -ForegroundColor Yellow
     Remove-Item -Path $GethDataDir -Recurse -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
 }
@@ -91,6 +81,15 @@ if ($NeedReset -and (Test-Path $GethDataDir)) {
 Write-Host "`nInitializing genesis block..." -ForegroundColor Cyan
 $InitOutput = & $GethExe --datadir $Node2Dir init $GenesisFile 2>&1
 Write-Host "$InitOutput"
+
+if ("$InitOutput" -match "incompatible genesis|Failed to write genesis block") {
+    Write-Host "`n[!] Incompatible genesis detected in database." -ForegroundColor Yellow
+    Write-Host "--> Automatically wiping outdated node2/geth database and re-initializing with new genesis..." -ForegroundColor Yellow
+    Remove-Item -Path $GethDataDir -Recurse -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    $InitOutput = & $GethExe --datadir $Node2Dir init $GenesisFile 2>&1
+    Write-Host "$InitOutput"
+}
 
 # 5. Check if accounts exist
 Write-Host "`nChecking Node 2 accounts..." -ForegroundColor Cyan
