@@ -386,7 +386,232 @@ def api_entries(case_id):
         results["status"] = f"Error: {str(e)}"
         results["all_ok"] = False
         
-    return jsonify(results)
+
+# ── Interactive Action & Tamper Testbed Routes ─────────────────────
+
+DEMO_CASE_ID = "DEMO-SESSION-001"
+DEMO_DIR = os.path.join(BASE_DIR, "sample log")
+os.makedirs(DEMO_DIR, exist_ok=True)
+DEMO_LOG_PATH = os.path.join(DEMO_DIR, "demo_action_tracker.log")
+DEMO_BACKUP_PATH = os.path.join(DEMO_DIR, "demo_action_tracker.backup.log")
+
+@app.route('/demo')
+def demo_page():
+    return render_template('demo.html')
+
+@app.route('/api/demo/state')
+def api_demo_state():
+    logs = []
+    lines = []
+    if os.path.exists(DEMO_LOG_PATH):
+        with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+            lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+    chain_count = 0
+    if contract_v2:
+        try:
+            chain_count = contract_v2.functions.getEntryCount(DEMO_CASE_ID).call()
+        except:
+            chain_count = 0
+
+    block_num = 0
+    if w3.is_connected():
+        try:
+            block_num = w3.eth.block_number
+        except:
+            pass
+
+    for i, line in enumerate(lines):
+        local_hash = sha256_line(line)
+        is_anchored = (i < chain_count)
+        chain_hash = ""
+        is_tampered = False
+
+        if is_anchored and contract_v2:
+            try:
+                chain_hash = contract_v2.functions.getEntryHash(DEMO_CASE_ID, i).call()
+                is_tampered = (local_hash != chain_hash)
+            except:
+                pass
+
+        logs.append({
+            "index": i,
+            "content": line,
+            "local_hash": local_hash,
+            "chain_hash": chain_hash,
+            "is_anchored": is_anchored,
+            "is_tampered": is_tampered
+        })
+
+    return jsonify({
+        "case_id": DEMO_CASE_ID,
+        "logs": logs,
+        "block_number": block_num,
+        "contract_address": CONTRACT_ADDRESS_V2,
+        "chain_count": chain_count
+    })
+
+@app.route('/api/demo/action', methods=['POST'])
+def api_demo_action():
+    data = request.get_json() or {}
+    action_text = data.get('action', '').strip()
+    if not action_text:
+        return jsonify({"success": False, "error": "Empty action"}), 400
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_line = f"[{timestamp}] {action_text}"
+
+    with open(DEMO_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(formatted_line + "\n")
+
+    with open(DEMO_BACKUP_PATH, "a", encoding="utf-8") as f:
+        f.write(formatted_line + "\n")
+
+    return jsonify({
+        "success": True,
+        "line": formatted_line,
+        "hash": sha256_line(formatted_line)
+    })
+
+@app.route('/api/demo/anchor', methods=['POST'])
+def api_demo_anchor():
+    if not contract_v2 or not w3.is_connected():
+        return jsonify({"success": False, "error": "Blockchain or Contract V2 offline"}), 500
+
+    if not os.path.exists(DEMO_LOG_PATH):
+        return jsonify({"success": False, "error": "No demo logs recorded yet"}), 400
+
+    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+        lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+    try:
+        current_chain_count = contract_v2.functions.getEntryCount(DEMO_CASE_ID).call()
+    except:
+        current_chain_count = 0
+
+    new_lines = lines[current_chain_count:]
+    if not new_lines:
+        return jsonify({
+            "success": True,
+            "submitted_count": 0,
+            "message": "All current entries are already anchored on-chain."
+        })
+
+    from hash_and_submit import send_tx, ACCOUNT
+    nonce = w3.eth.get_transaction_count(ACCOUNT)
+    last_tx_hash = None
+
+    for i, line in enumerate(new_lines):
+        line_idx = current_chain_count + i
+        line_hash = sha256_line(line)
+        tx_hash = send_tx(
+            contract_v2.functions.appendEntryHash(DEMO_CASE_ID, line_idx, line_hash),
+            nonce,
+            label=f"demo[{line_idx}]"
+        )
+        nonce += 1
+        last_tx_hash = tx_hash
+
+    receipt = w3.eth.wait_for_transaction_receipt(last_tx_hash, timeout=15)
+    return jsonify({
+        "success": True,
+        "submitted_count": len(new_lines),
+        "block_number": receipt.blockNumber,
+        "tx_hash": last_tx_hash.hex()
+    })
+
+@app.route('/api/demo/tamper', methods=['POST'])
+def api_demo_tamper():
+    data = request.get_json() or {}
+    idx = data.get('index')
+    new_content = data.get('content')
+
+    if idx is None or not new_content or not os.path.exists(DEMO_LOG_PATH):
+        return jsonify({"success": False, "error": "Invalid request"}), 400
+
+    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+        lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+    if idx < 0 or idx >= len(lines):
+        return jsonify({"success": False, "error": "Index out of range"}), 400
+
+    lines[idx] = new_content
+    with open(DEMO_LOG_PATH, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
+
+    return jsonify({"success": True, "tampered_index": idx})
+
+@app.route('/api/demo/delete', methods=['POST'])
+def api_demo_delete():
+    data = request.get_json() or {}
+    idx = data.get('index')
+
+    if idx is None or not os.path.exists(DEMO_LOG_PATH):
+        return jsonify({"success": False, "error": "Invalid request"}), 400
+
+    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+        lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+    if idx < 0 or idx >= len(lines):
+        return jsonify({"success": False, "error": "Index out of range"}), 400
+
+    del lines[idx]
+    with open(DEMO_LOG_PATH, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
+
+    return jsonify({"success": True, "deleted_index": idx})
+
+@app.route('/api/demo/restore', methods=['POST'])
+def api_demo_restore():
+    if os.path.exists(DEMO_BACKUP_PATH):
+        with open(DEMO_BACKUP_PATH, "r", encoding="utf-8") as src:
+            content = src.read()
+        with open(DEMO_LOG_PATH, "w", encoding="utf-8") as dst:
+            dst.write(content)
+        return jsonify({"success": True, "message": "Restored from backup"})
+    return jsonify({"success": False, "error": "Backup file not found"}), 404
+
+@app.route('/api/demo/verify')
+def api_demo_verify():
+    if not os.path.exists(DEMO_LOG_PATH):
+        return jsonify({"all_ok": True, "rows": []})
+
+    with open(DEMO_LOG_PATH, "r", encoding="utf-8") as f:
+        lines = [line.rstrip('\r\n') for line in f.readlines() if line.strip()]
+
+    chain_count = 0
+    if contract_v2:
+        try:
+            chain_count = contract_v2.functions.getEntryCount(DEMO_CASE_ID).call()
+        except:
+            chain_count = 0
+
+    all_ok = True
+    rows = []
+    for i, line in enumerate(lines):
+        local_hash = sha256_line(line)
+        chain_hash = ""
+        status = "PENDING_NOTARIZATION"
+        if i < chain_count and contract_v2:
+            try:
+                chain_hash = contract_v2.functions.getEntryHash(DEMO_CASE_ID, i).call()
+                if local_hash == chain_hash:
+                    status = "VERIFIED"
+                else:
+                    status = "TAMPERED"
+                    all_ok = False
+            except:
+                pass
+        rows.append({
+            "index": i + 1,
+            "status": status,
+            "local_hash": local_hash,
+            "chain_hash": chain_hash
+        })
+
+    return jsonify({"all_ok": all_ok, "rows": rows})
 
 if __name__ == '__main__':
     print("\n" + "="*70)

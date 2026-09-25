@@ -20,5 +20,5 @@ __pycache__/
 # Geth chaindata, LevelDB, and runtime locks
 node1/geth/
 single_node/geth/
-*/geth/
+*/geth*/
 *.ipc
